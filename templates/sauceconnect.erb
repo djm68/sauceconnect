@@ -1,0 +1,136 @@
+#! /bin/sh
+### BEGIN INIT INFO
+# Provides:          saucelabs connet
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:     $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Saucelabs Connect init script
+# Description:       Control the Saucelabs Connect service
+### END INIT INFO
+
+# Author: Domnic Maraglia <dominic@puppetlabs.com>
+#
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+PATH=/sbin:/usr/sbin:/bin:/usr/bin
+DESC="Saucelabs Connect service"
+NAME=sauceconnect
+#DAEMON=/usr/bin/$NAME
+#DAEMON_ARGS="--options args"
+PIDFILE=/var/run/$NAME.pid
+SCRIPTNAME=/etc/init.d/$NAME
+
+# Read configuration variable file if it is present
+#[ -r /etc/default/$NAME ] && . /etc/default/$NAME
+SAUCE_USER=<%= sauce_user %>
+SAUCE_KEY=<%= sauce_key %>
+
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.0-6) to ensure that this file is present.
+. /lib/lsb/init-functions
+
+#
+# Function checks status of Sauce Connect
+#
+do_status()
+{
+	ps aux | grep Sauce-Connect.jar | grep -v grep > /dev/null
+        RETVAL=$?
+	[ "$RETVAL" = 0 ]  && echo "${NAME} is running" && return 0
+	[ "$RETVAL" != 0 ] && echo "${NAME} is not running" && return 3
+}
+
+#
+# Function that starts the daemon/service
+#
+do_start()
+{
+        # If already running, return 1
+        do_status > /dev/null
+        running=$?
+        [ $running = 0 ] && echo "Sauce-Connect already running" && return 1
+
+        # Start the service
+        java -jar /usr/local/src/Sauce-Connect.jar --readyfile $PIDFILE $SAUCE_USER $SAUCE_KEY &
+
+        # Wait for the Sauce-Connect service to actually start
+        count=0
+        while [ 1 ] ; do
+          [ -f "$PIDFILE" ] && return 0
+          echo "$count Waitting for $NAME to come online"
+          count=$((count+1))
+          sleep 5
+          [ "$count" = 20 ] && break
+        done
+        # If we have reached here, there was a problem
+        echo "Sauce-Connect failed to start" && return 2
+}
+
+#
+# Function that stops the daemon/service
+#
+do_stop()
+{
+        # Check if Sauce-Connnet is stopped
+        do_status > /dev/null 
+        running=$?
+        [ $running != 0 ] && echo "$NAME already stopped" && return 1
+
+        # Stop Sauce-Connect
+        kill $(ps aux | grep Sauce-Connect.jar | grep -v grep | awk '{ print $2 }')
+				RETVAL="$?"
+				[ "$RETVAL" = 2 ] && return 2
+				rm -f $PIDFILE
+				return "$RETVAL"
+}
+
+
+case "$1" in
+  start)
+	[ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESC" "$NAME"
+	do_start
+	case "$?" in
+		0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+		2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+	esac
+	;;
+  stop)
+	[ "$VERBOSE" != no ] && log_daemon_msg "Stopping $DESC" "$NAME"
+	do_stop
+	case "$?" in
+		0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+		2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+	esac
+	;;
+  status) 
+       do_status
+       exit $?
+       ;;
+  restart)
+	log_daemon_msg "Restarting $DESC" "$NAME"
+	do_stop
+	case "$?" in
+	  0|1)
+		do_start
+		case "$?" in
+			0) log_end_msg 0 ;;
+			1) log_end_msg 1 ;; # Old process is still running
+			*) log_end_msg 1 ;; # Failed to start
+		esac
+		;;
+	  *)
+	  	# Failed to stop
+		log_end_msg 1
+		;;
+	esac
+	;;
+  *)
+	echo "Usage: $SCRIPTNAME {start|stop|status|restart}" >&2
+	exit 3
+	;;
+esac
+
+:
